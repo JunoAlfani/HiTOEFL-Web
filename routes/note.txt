@@ -1,0 +1,44 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| contains the "web" middleware group. Now create something great!
+|
+*/
+
+Route::get('/grafkom', 'App\Http\Controllers\Site\GrafkomController@getIndex')->name('site.grafkom.getIndex');
+
+Route::get('/', 'App\Http\Controllers\Admin\DashboardController@getIndex')->name('admin.dashboard.getIndex');
+
+Route::get('/sales', 'App\Http\Controllers\Admin\SalesController@getIndex')->name('admin.sales.getIndex');
+Route::get('/sales/create', 'App\Http\Controllers\Admin\SalesController@getCreate')->name('admin.sales.getCreate');
+Route::get('/sales/update/{id}', 'App\Http\Controllers\Admin\SalesController@getUpdate')->name('admin.sales.getUpdate');
+Route::post('/sales/create', 'App\Http\Controllers\Admin\SalesController@postCreate')->name('admin.sales.postCreate');
+
+Route::get('/items', 'App\Http\Controllers\Admin\ItemsController@getIndex')->name('admin.items.getIndex');
+Route::get('/items/create', 'App\Http\Controllers\Admin\ItemsController@getCreate')->name('admin.items.getCreate');
+Route::post('/items/create', 'App\Http\Controllers\Admin\ItemsController@postCreate')->name('admin.items.postCreate');
+Route::get('/items/update/{id}', 'App\Http\Controllers\Admin\ItemsController@getUpdate')->name('admin.items.getUpdate');
+Route::post('/items/update/{id}', 'App\Http\Controllers\Admin\ItemsController@postUpdate')->name('admin.items.postUpdate');
+Route::get('/items/delete/{id}', 'App\Http\Controllers\Admin\ItemsController@getDelete')->name('admin.items.getDelete');
+
+Route::get('/shoppings', 'App\Http\Controllers\Admin\ShoppingsController@getIndex')->name('admin.shoppings.getIndex');
+Route::get('/shoppings/create', 'App\Http\Controllers\Admin\ShoppingsController@getCreate')->name('admin.shoppings.getCreate');
+Route::post('/shoppings/create', 'App\Http\Controllers\Admin\ShoppingsController@postCreate')->name('admin.shoppings.postCreate');
+Route::get('/shoppings/update/{id}', 'App\Http\Controllers\Admin\ShoppingsController@getUpdate')->name('admin.shoppings.getUpdate');
+Route::post('/shoppings/update/{id}', 'App\Http\Controllers\Admin\ShoppingsController@postUpdate')->name('admin.shoppings.postUpdate');
+Route::get('/shoppings/delete/{id}', 'App\Http\Controllers\Admin\ShoppingsController@getDelete')->name('admin.shoppings.getDelete');
+
+Route::get('/stocks', 'App\Http\Controllers\Admin\ItemsController@getIndex')->name('admin.stocks.getIndex');
+Route::get('/stocks/create', 'App\Http\Controllers\Admin\ItemsController@getCreate')->name('admin.stocks.getCreate');
+Route::post('/stocks/create', 'App\Http\Controllers\Admin\ItemsController@postCreate')->name('admin.stocks.postCreate');
+Route::get('/stocks/update/{id}', 'App\Http\Controllers\Admin\ItemsController@getUpdate')->name('admin.stocks.getUpdate');
+Route::post('/stocks/update/{id}', 'App\Http\Controllers\Admin\ItemsController@postUpdate')->name('admin.stocks.postUpdate');
+Route::get('/stocks/delete/{id}', 'App\Http\Controllers\Admin\ItemsController@getDelete')->name('admin.stocks.getDelete');

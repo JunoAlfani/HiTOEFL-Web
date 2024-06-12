@@ -1,0 +1,415 @@
+
+---
+
+- name: Install and configure services
+  hosts: all
+  become: true
+
+  vars_files:
+    - vars_mongo.yml
+
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Installing Prerequisites for Kubernetes
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - vim
+          - software-properties-common
+        state: present
+
+    - name: disable SWAP (Kubeadm requirement)
+      shell: |
+        swapoff -a
+
+    - name: disable SWAP in fstab (Kubeadm requirement)
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: create an empty file for the Containerd module
+      copy:
+        content: ""
+        dest: /etc/modules-load.d/containerd.conf
+        force: no
+
+    - name: configure modules for Containerd
+      blockinfile:
+        path: /etc/modules-load.d/containerd.conf
+        block: |
+             overlay
+             br_netfilter
+
+    - name: create an empty file for Kubernetes sysctl params
+      copy:
+        content: ""
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        force: no
+
+    - name: configure sysctl params for Kubernetes
+      lineinfile:
+        path: /etc/sysctl.d/99-kubernetes-cri.conf
+        line: "{{ item }}"
+      with_items:
+        - 'net.bridge.bridge-nf-call-iptables  = 1'
+        - 'net.ipv4.ip_forward                 = 1'
+        - 'net.bridge.bridge-nf-call-ip6tables = 1'
+
+
+    - name: apply sysctl params without reboot
+      command: sysctl --system
+
+    - name: install APT Transport HTTPS
+      apt:
+        name: apt-transport-https
+        state: present
+
+    - name: add Docker apt-key
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker-apt-keyring.asc
+        mode: '0644'
+        force: true
+
+    - name: add Docker's APT repository
+      apt_repository:
+        repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} signed-by=/etc/apt/keyrings/docker-apt-keyring.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        update_cache: yes
+
+
+    - name: add Kubernetes apt-key
+      get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+        mode: '0644'
+        force: true
+
+    - name: Add Google official GPG key
+      apt_key:
+       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+       state: present
+
+
+    - name: Add Kubernetes Repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/trusted.gpg.d/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+        filename: kubernetes
+        mode: 0600
+
+    - name: install Containerd
+      apt:
+        name: containerd.io
+        state: present
+
+    - name: create Containerd directory
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: add Containerd configuration
+      shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+
+    - name: configuring the systemd cgroup driver for Containerd
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '            SystemdCgroup = false'
+        line: '            SystemdCgroup = true'
+
+    - name: enable the Containerd service and start it
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon-reload: yes
+
+    - name: install kubelet
+      apt:
+        name: kubelet
+        state: present
+        update_cache: true
+
+    - name: install kubeadm
+      apt:
+        name: kubeadm
+        state: present
+ t
+
+    - name: Enable service kubelet, and enable persistently
+      service:
+        name: kubelet
+        enabled: yes
+
+    - name: load br_netfilter kernel module
+      modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Check Ubuntu version
+      command: lsb_release -rs
+      register: ubuntu_version
+
+    - name: Installing dependancies
+      package:
+         name: "{{item}}"
+         state: present
+         update_cache: yes
+      loop:
+        - curl
+        - gnupg
+        - python3-pip
+      become: yes
+
+    - name: Install pymongo
+      pip:
+        name: pymongo
+
+    - name: Check if MongoDB APT keyring exists
+      stat:
+        path: /usr/share/keyrings/mongo-key.gpg
+      register: mongo_keyring_exists
+
+    - name: Add MongoDB APT keyring
+      shell: "curl -fsSL https://pgp.mongodb.com/server-{{ mongodb_version }}.asc | sudo gpg -o /usr/share/keyrings/mongodb-serve-{{ mongodb_version }}.gpg --dearmor"
+      args:
+        executable: /bin/bash
+      when: not mongo_keyring_exists.stat.exists
+
+    - name: Check if MongoDB repository exists
+      stat:
+        path: /etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list
+      register: mongo_repository_exists
+
+    - name: Add MongoDB apt repository
+      become: true
+      lineinfile:
+        path: /etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list
+        line: "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-{{ mongodb_version }}.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/{{ mongodb_version }} multiverse"
+        create: yes
+
+    - name: Download MongoDB public key
+      get_url:
+        url: https://www.mongodb.org/static/pgp/server-7.0.asc
+        dest: /tmp/mongodb-server-{{ mongodb_version }}.asc
+
+    - name: Add MongoDB public key
+      apt_key:
+        file: /tmp/mongodb-server-{{ mongodb_version }}.asc
+        state: present
+
+    - name: Add MongoDB apt repository
+      block:
+        - name: Check if MongoDB repository exists
+          stat:
+            path: /etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list
+          register: mongo_repository_exists
+
+        - name: Add MongoDB apt repository
+          lineinfile:
+            path: /etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list
+            line: "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
+            create: yes
+          when: not mongo_repository_exists.stat.exists
+
+      rescue:
+        - name: Remove incomplete MongoDB repository file
+          file:
+            path: /etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list
+            state: absent
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install MongoDB packages
+      apt:
+        name: mongodb-org
+        state: latest
+
+    - name: Enable and start MongoDB service
+      service:
+        name: mongod
+        state: started
+        enabled: yes
+
+   # - name: Create MongoDB root user
+     # mongodb_user:
+        #login_port: "27017"
+        #database: "admin"
+        #name: "{{ mongodb_root_user }}"
+        #password: "{{ mongodb_root_password }}"
+        #roles: "root"
+
+
+    - name: Enable remote connections in MongoDB
+      lineinfile:
+        path: /etc/mongod.conf
+        regexp: '^ *bindIp:.*'
+        line: '  bindIp: 0.0.0.0'
+        state: present
+        backup: yes
+      notify:
+        - Restart MongoDB Service
+
+    - name: Enable authentication in MongoDB
+      lineinfile:
+        path: /etc/mongod.conf
+        line: "security:\n  authorization: enabled"
+        insertafter: "^#security:"
+        state: present
+        backup: yes
+      notify:
+        - Restart MongoDB Service
+
+    - name: Ensure mongodb is running and and enabled to start automatically on reboots
+      service:
+        name: mongod
+        enabled: yes
+        state: started
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Enable and start MongoDB service
+      service:
+        name: mongod
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart MongoDB Service
+      service:
+        name: mongod
+        state: restarted
+
+    - name: Enable remote connections in MongoDB
+      lineinfile:
+        path: /etc/mongod.conf
+        regexp: '^ *bindIp:.*'
+        line: '  bindIp: 0.0.0.0'
+        state: present
+        backup: yes
+      notify:
+        - Restart MongoDB Service
+
+    - name: Enable authentication in MongoDB
+      lineinfile:
+        path: /etc/mongod.conf
+        line: "security:\n  authorization: enabled"
+        insertafter: "^#security:"
+        state: present
+        backup: yes
+      notify:
+        - Restart MongoDB Service
+
+
+- name: Install postgresql minio NFS Server and KeyCloak
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Install PostgreSQL
+      apt:
+        name: postgresql
+        state: present
+
+    - name: Start and enable PostgreSQL
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Download Minio Server package
+      get_url:
+        url: https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20240307004348.0.0_amd64.deb
+        dest: /tmp/minio.deb
+
+    - name: Install Minio Server
+      apt:
+        deb: /tmp/minio.deb
+
+    - name: Create Minio Server directory
+      file:
+        path: ~/minio
+        state: directory
+
+    - name: Launch Minio Server
+      command: >
+        minio server ~/minio
+        --console-address :9001
+      async: 0
+      poll: 0
+      ignore_errors: yes
+
+    - name: Download Minio Client
+      get_url:
+        url: https://dl.min.io/client/mc/release/linux-amd64/mc
+        dest: /usr/local/bin/mc
+        mode: "0755"
+
+    - name: Set Minio Client alias
+      command: >
+        mc alias set local http://127.0.0.1:9000 minioadmin minioadmin
+
+    - name: Display Minio Server information
+      command: >
+        mc admin info local
+
+
+    - name: Install NFS Server
+      apt:
+        name: nfs-kernel-server
+        state: present
+
+    - name: Start NFS server
+      service:
+        name: nfs-kernel-server
+        state: started
+        enabled: yes
+
+   # - name: Add Keycloak apt key
+      #apt_key:
+       # url: https://keycloak.org/downloads/keycloak-24.0.1.zip
+        #state: present
+
+   # - name: Add Keycloak apt repository
+      #apt_repository:
+       # repo: deb https://downloads.jboss.org/keycloak/24.0.1/keycloak-24.0.1.zip
+        #state: present
+
+   # - name: Install Keycloak
+      #apt:
+       # name: keycloak
+        #state: present
+
+
+- hosts: workstations
+  become: yes
+  tasks:
+    - name: install Kubectl
+      apt:
+        name: kubectl
+        state: present
+        force: yes
+
+
+- hosts: all
+  become: true
+  tasks:
+
+    - name: Reboot all the kubernetes nodes.
+      reboot:
+        post_reboot_delay: 10
+        reboot_timeout: 40
+        connect_timeout: 60
+        test_command: uptime
